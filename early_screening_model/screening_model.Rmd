@@ -1,0 +1,302 @@
+---
+title: '0123'
+author: "Yi_Ping"
+date: "2024-01-23"
+output: html_document
+---
+
+
+### check why the stages have the unexpected scores, especially the stage IV
+### use the 200 features for the final model
+
+### import library
+```{r}
+### import the library 
+library(readxl)
+library(dplyr)
+library(factoextra) 
+library(ggplot2)
+library(pROC)
+library(stats)
+library(caret)
+library(pheatmap)
+library(clusterProfiler)
+library(ggstatsplot)
+### import the function
+source('./used_function.R')
+
+```
+
+### import dataset
+```{r}
+### tss matrix
+BJYYBIElung_tssmatrix <- read.csv("~/Desktop/BDF/data/BJYYBIElung_tssmatrix.csv")
+dim(BJYYBIElung_tssmatrix) # 93701   224
+### change '.' into '-'
+colnames(BJYYBIElung_tssmatrix)[3:ncol(BJYYBIElung_tssmatrix)] <- 
+gsub('[.]','-',colnames(BJYYBIElung_tssmatrix)[3:ncol(BJYYBIElung_tssmatrix)])
+### clinic data
+lung_clinic <- read_excel("~/Desktop/BDF/data/lung_clinic_used.xlsx")
+dim(lung_clinic) # 96  8
+
+unique(colnames(BJYYBIElung_tssmatrix))
+colnames(BJYYBIElung_tssmatrix)# 1:2, 3:124 ,125:224
+```
+
+### after row #97 cannot be used
+```{r}
+lung_clinic_used <- lung_clinic[1:96,]
+lung_clinic_used$Nmeta <- as.numeric(lung_clinic_used$Nmeta)
+table(lung_clinic_used$Nmeta)
+#0  1  2  3  4  5  7 
+#57 21  8  4  2  3  1 
+#lung_clinic_used$Nnodes <- apply(data.frame(lung_clinic_used$淋巴结),1,
+#                                 function(x)return(strsplit(x,'')[[1]][2]))
+#lung_clinic_used[which(lung_clinic_used$淋巴结 == '0'),'Nnodes'] = '0'
+table(lung_clinic_used$Nnodes)
+
+# 0  1  2  3 
+#45  2 18 31 
+table(lung_clinic_used$stage_less)
+# I II III IV
+# 32 3 22 39
+table(lung_clinic_used$GGOorsolid)
+
+```
+
+### use the lung_clinic_used$Nmeta && lung_clinic_used$Nnodes to build model and classify them
+```{r}
+### 96 samples selected
+lung_tss <- BJYYBIElung_tssmatrix[,lung_clinic_used$sample]
+lung_tss <- cbind(lung_tss,BJYYBIElung_tssmatrix[,125:224])
+dim(lung_tss) # 93701   196
+### pre_treat the tss matrix
+lung_tss_pred <- pre_treat_rm0pNA(lung_tss)
+dim(lung_tss_pred)# 196 90808
+
+```
+
+###########################################################################
+########################## for CA nonCA model #############################
+###########################################################################
+```{r}
+model_clinic <- data.frame(sample = c(lung_clinic_used$sample,colnames(BJYYBIElung_tssmatrix[,125:224])))
+model_clinic$group = 'CA'
+model_clinic$group[97:nrow(model_clinic)] = 'nonCA'
+### 75% for training 25% for testing
+  clinic = model_clinic
+  matrix = lung_tss_pred
+  set.seed(123)
+  inTrain=createDataPartition(y=clinic$group,p=0.70,list=FALSE)
+  training=matrix[inTrain,]
+  testing=matrix[-inTrain,]
+  ### save the group of training && testing 
+  trainLabels <- clinic[inTrain,'group']
+  testLabels <- clinic[-inTrain,'group']
+  test_clinic_matrix<- clinic[-inTrain,]
+  dim(training) #   147 90808
+  dim(testing)  #  49 90808
+  
+  training_range_sample <- range_cal(matrix = training,roworcol = 1)
+  range(training_range_sample$median) #  0.596288 0.958518
+  
+  training_range_site <- range_cal(matrix = training,roworcol = 2)
+  range(training_range_site$median) # 0.000 170.935
+  
+  ### do the normalize for the sites -- use the z-score && median & MAD and ignore the outliers
+  training_range_site <- training_range_site[which(training_range_site$mad != 0),]
+  site_used <- rownames(training_range_site[which(training_range_site$mad != 0),])
+  
+  training_rmmad <- training[,site_used]
+  
+  training_zscore <- data.frame(apply(data.frame(training_rmmad), 2, custom_z_score))
+  training_zscore_range <- range_cal(matrix = training_zscore,roworcol = 2)
+  training_zscore_rangesamples <- range_cal(matrix = training_zscore,roworcol = 1)
+  range(training_zscore_range$median) # -3.957338e-16  7.216450e-16
+  dim(training_zscore) #   147 90794
+  
+  testing_zscore <- newmatrix_z_norm(new_matrix=testing,training_range_site)
+  dim(testing_zscore) #  53 90599
+  testing_zscore_range <- range_cal(matrix = testing_zscore,roworcol = 2)
+  range(testing_zscore_range$median) #  -0.9618575 25.8452444
+ 
+```
+
+```{r}
+### try
+training_range_sample$sample <- rownames(training_range_sample)
+training_range_sample <- left_join(training_range_sample,lung_clinic_used,by='sample')
+
+training_zscore_rangesamples$sample <- rownames(training_zscore_rangesamples)
+training_zscore_rangesamples <- left_join(training_zscore_rangesamples,lung_clinic_used,by='sample')
+
+
+table(training_range_sample$stage_less)
+
+```
+### try rank values sum (use clinic_rank && train_topbins)
+```{r}
+group_train = data.frame(disease = clinic[inTrain,'group'])
+dim(group_train)
+tss_z_pCA <- p_cal(trainTransformed = training_zscore,
+                     trainLabels = group_train$disease,
+                     trainLabels_sig = 'CA',paired = FALSE)  
+### P < 0.01
+tss_z_pCAcut <- tss_z_pCA[which(tss_z_pCA[,1] < as.numeric(0.01) ),]
+dim(tss_z_pCAcut)  #  19650     2
+train_topbins<-as.data.frame(training_zscore)[,tss_z_pCAcut$V2]
+
+### rank for every feature
+clinic_rank <- lung_clinic_used[,c('sample','stage_less')]
+
+### rank matrix for train_topbins
+train_topbins_rank <- data.frame(apply(train_topbins,2,function(x) return(rank(x))))
+train_topbins_rank$sample = rownames(train_topbins_rank)
+### sum of several groups
+train_topbins_rank <- left_join(train_topbins_rank,clinic_rank,by='sample')
+colnames(train_topbins_rank)[ncol(train_topbins_rank)]
+
+train_topbins_rank[is.na(train_topbins_rank$stage_less),'stage_less'] = 'healthy'
+Nsites = ncol(train_topbins_rank)-2
+
+group_mean <- function(value_col){
+  ###
+  matrix_col <- data.frame(stage_less = train_topbins_rank$stage_less,
+                           value = value_col)
+  result_matrix <- data.frame(aggregate(value ~ stage_less,data = matrix_col, FUN = mean))
+  return(result_matrix$value)
+}
+
+result_matrix_mean <- data.frame(site=colnames(train_topbins_rank)[1:Nsites])
+result_matrix_mean$healthy = 1
+result_matrix_mean$I = 1
+result_matrix_mean$II = 1
+result_matrix_mean$III = 1
+result_matrix_mean$IV = 1
+
+
+for (i in 1:Nsites) {
+  result_matrix_mean[i,2:6] <- group_mean(train_topbins_rank[,i])
+}
+
+### rm stage II because just includes 2 samples 
+rownames(result_matrix_mean) <- result_matrix_mean$site
+result_matrix_mean2 <- result_matrix_mean[,c(2,3,5,6)]
+### only the up or down sort of (healthy,I,III,IV)
+up_sort <- function(one_row){
+  one_row =  as.numeric(one_row)
+  return(all(diff(one_row) > 0))
+}
+
+down_sort <- function(one_row){
+  one_row =  as.numeric(one_row)
+  return(all(diff(one_row) < 0))
+}
+up_sort(result_matrix_mean2[3,])
+result_matrix_mean2$up <- apply(result_matrix_mean2,1,up_sort)
+result_matrix_mean2$down <- apply(result_matrix_mean2,1,down_sort)
+### up && down
+result_matrix_mean3 <- result_matrix_mean2[which(result_matrix_mean2$up == TRUE | result_matrix_mean2$down == TRUE),] # 2402
+result_matrix_mean3 <- result_matrix_mean2[which(result_matrix_mean2$up == TRUE),]#2226
+
+result_matrix_mean4 <- result_matrix_mean2[which(result_matrix_mean2$up == TRUE | result_matrix_mean2$down == TRUE),]
+
+result_matrix_mean3$gap = result_matrix_mean3[,2]-result_matrix_mean3[,1]
+result_matrix_mean3$gap2 = result_matrix_mean3[,4]-result_matrix_mean3[,1]
+result_matrix_mean3$gap3 = result_matrix_mean3[,4]-result_matrix_mean3[,2]
+
+### sort by gap && choose top 200
+
+result_matrix_mean3 <- result_matrix_mean3[order(-result_matrix_mean3$gap),]
+result_matrix_mean3_cut <- result_matrix_mean3[1:as.numeric(200),]
+
+rank_sites <- rownames(result_matrix_mean3_cut)
+length(rank_sites) # 200
+
+
+
+```
+### use the 200 fetures to make the model
+```{r}
+### build the model based on features:rank_sites
+  
+  train_topbins<-as.data.frame(training_zscore)[,rank_sites]
+  dim(train_topbins) #  158 300
+  test_topbins<-as.data.frame(testing_zscore)[,rank_sites]
+  dim(test_topbins) # 52 300
+  
+  train_topbins$group <- factor(trainLabels,levels = c('CA','nonCA'))
+  test_topbins$group <- factor(testLabels,levels = c('CA','nonCA'))
+  used_100f <- rbind(train_topbins,test_topbins)
+  
+  ### build model based on rf
+  set.seed(123) 
+  ctrl = trainControl(method = "repeatedcv", number = 10, repeats = 3,
+                      allowParallel = TRUE,classProbs = TRUE,savePredictions = TRUE,search='grid',summaryFunction = twoClassSummary)
+  set.seed(123) 
+  ctrl$sampling <- "up"
+  tunegrid <- expand.grid(mtry = c(1))
+  set.seed(123)
+  ### 0.9027833   0.9027
+  rf_default1 <- train(group~., 
+                       data=train_topbins, 
+                       method='rf', 
+                       #metric='Accuracy',  #Metric compare model is Accuracy
+                       metric = "ROC",
+                       tuneGrid=tunegrid,
+                       ntree=c(1500),
+                       trControl=ctrl)
+  rf_default1
+  modeltss_CA <- rf_default1
+  rf_default1 <- modeltss_CA
+  CAnonCAp=tss_z_pCAcut #19650
+
+   modeltss_CA = modeltss_CA200  # 
+   training_zscore = CAtrain
+  testing_zscore = CAtest 
+  train_topbins<-as.data.frame(training_zscore)[,rank_sites]
+  dim(train_topbins) #  158 300
+  test_topbins<-as.data.frame(testing_zscore)[,rank_sites]
+  dim(test_topbins) # 52 300
+  
+  # 
+  CAnontesting_zscore <- test_topbins 
+  test_topbins <- CAnontesting_zscore 
+  pred <- predict(modeltss_CA200,newdata = test_topbins,type = "prob")
+  pred$sample = rownames(pred)
+  pred <- left_join(pred,model_clinic,by='sample')
+  pred$res = 1
+  pred[which(pred$CA<0.4),'res'] = 0 
+  
+  pred$true = 1
+  #pred$true[1:25] = 0
+  pred[which(pred$group != 'CA'),'true'] = 0 
+  
+  pred$equ = 1
+  pred[which(pred$res != pred$true),'equ'] = 0 
+  
+  roc_data <- roc(pred$true, pred[,1],type="prob")
+  print(roc_data)
+  
+  pred <- left_join(pred,lung_clinic_used,'sample')
+  
+```
+
+```{r}
+### save data of CA model
+CAnonCAp=tss_z_pCAcut #19650
+
+modeltss_CA200 = modeltss_CA # 
+CAtrain = training_zscore
+CAtest = testing_zscore
+load('/Users/pingyi/Desktop/BDF/script/out_data/CAnonCA200f')
+save(training_range_site,testing,CAnonCAp,result_matrix_mean4, modeltss_CA200,CAtrain,CAtest,
+     file = '/Users/pingyi/Desktop/BDF/script/out_data/CAnonCA200f')
+#save(used_100f,modeltss_CA,file = '/Users/pingyi/Desktop/BDF/script/out_data/CAnonCA100f')
+
+```
+
+```{r}
+
+```
+
