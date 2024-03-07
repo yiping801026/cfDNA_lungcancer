@@ -1,14 +1,8 @@
 ---
-title: '0123'
+title: 'Screening model for LUNG CANCER'
 author: "Yi_Ping"
-date: "2024-01-23"
 output: html_document
 ---
-
-
-### check why the stages have the unexpected scores, especially the stage IV
-### use the 200 features for the final model
-
 ### import library
 ```{r}
 ### import the library 
@@ -28,7 +22,7 @@ source('./used_function.R')
 ```
 
 ### import dataset
-```{r}
+```{r warning=FALSE}
 ### tss matrix
 BJYYBIElung_tssmatrix <- read.csv("~/Desktop/BDF/data/BJYYBIElung_tssmatrix.csv")
 dim(BJYYBIElung_tssmatrix) # 93701   224
@@ -43,28 +37,25 @@ unique(colnames(BJYYBIElung_tssmatrix))
 colnames(BJYYBIElung_tssmatrix)# 1:2, 3:124 ,125:224
 ```
 
-### after row #97 cannot be used
+### clinical information for this dataset
 ```{r}
 lung_clinic_used <- lung_clinic[1:96,]
 lung_clinic_used$Nmeta <- as.numeric(lung_clinic_used$Nmeta)
 table(lung_clinic_used$Nmeta)
 #0  1  2  3  4  5  7 
 #57 21  8  4  2  3  1 
-#lung_clinic_used$Nnodes <- apply(data.frame(lung_clinic_used$淋巴结),1,
-#                                 function(x)return(strsplit(x,'')[[1]][2]))
-#lung_clinic_used[which(lung_clinic_used$淋巴结 == '0'),'Nnodes'] = '0'
 table(lung_clinic_used$Nnodes)
-
 # 0  1  2  3 
 #45  2 18 31 
 table(lung_clinic_used$stage_less)
 # I II III IV
 # 32 3 22 39
 table(lung_clinic_used$GGOorsolid)
-
+# ggo           NA solid nodule 
+# 20           61           15 
 ```
 
-### use the lung_clinic_used$Nmeta && lung_clinic_used$Nnodes to build model and classify them
+### pre_treat 
 ```{r}
 ### 96 samples selected
 lung_tss <- BJYYBIElung_tssmatrix[,lung_clinic_used$sample]
@@ -79,11 +70,13 @@ dim(lung_tss_pred)# 196 90808
 ###########################################################################
 ########################## for CA nonCA model #############################
 ###########################################################################
+### 70% training & 30% validation 
+### normalize for sites & save the normalization of training for further use
 ```{r}
 model_clinic <- data.frame(sample = c(lung_clinic_used$sample,colnames(BJYYBIElung_tssmatrix[,125:224])))
 model_clinic$group = 'CA'
 model_clinic$group[97:nrow(model_clinic)] = 'nonCA'
-### 75% for training 25% for testing
+### 70% for training 30% for testing
   clinic = model_clinic
   matrix = lung_tss_pred
   set.seed(123)
@@ -119,36 +112,26 @@ model_clinic$group[97:nrow(model_clinic)] = 'nonCA'
   dim(testing_zscore) #  53 90599
   testing_zscore_range <- range_cal(matrix = testing_zscore,roworcol = 2)
   range(testing_zscore_range$median) #  -0.9618575 25.8452444
- 
 ```
 
+### Dimensionality reduction for early screening model
+### STEP1: use the training set to calculate the p-value of sites, only p<0.01 will be remained  
+### STEP2: 1. calculate the rank score of every patient for every site 2.to calculate the mean of mean rank score of several groups (healthy,stageI,stageII,stageIII,stageIV) 3. only choose the sites with the same trend from early stages to advanced stages 4. sort by gap between healthy and stageI && choose top 200 features
+
+### rank values sum (use clinic_rank && train_topbins)
 ```{r}
-### try
-training_range_sample$sample <- rownames(training_range_sample)
-training_range_sample <- left_join(training_range_sample,lung_clinic_used,by='sample')
-
-training_zscore_rangesamples$sample <- rownames(training_zscore_rangesamples)
-training_zscore_rangesamples <- left_join(training_zscore_rangesamples,lung_clinic_used,by='sample')
-
-
-table(training_range_sample$stage_less)
-
-```
-### try rank values sum (use clinic_rank && train_topbins)
-```{r}
+### STEP1: p<0.01
 group_train = data.frame(disease = clinic[inTrain,'group'])
 dim(group_train)
 tss_z_pCA <- p_cal(trainTransformed = training_zscore,
                      trainLabels = group_train$disease,
                      trainLabels_sig = 'CA',paired = FALSE)  
-### P < 0.01
 tss_z_pCAcut <- tss_z_pCA[which(tss_z_pCA[,1] < as.numeric(0.01) ),]
 dim(tss_z_pCAcut)  #  19650     2
 train_topbins<-as.data.frame(training_zscore)[,tss_z_pCAcut$V2]
-
+### STEP2:
 ### rank for every feature
 clinic_rank <- lung_clinic_used[,c('sample','stage_less')]
-
 ### rank matrix for train_topbins
 train_topbins_rank <- data.frame(apply(train_topbins,2,function(x) return(rank(x))))
 train_topbins_rank$sample = rownames(train_topbins_rank)
@@ -158,9 +141,8 @@ colnames(train_topbins_rank)[ncol(train_topbins_rank)]
 
 train_topbins_rank[is.na(train_topbins_rank$stage_less),'stage_less'] = 'healthy'
 Nsites = ncol(train_topbins_rank)-2
-
+### calculate the mean
 group_mean <- function(value_col){
-  ###
   matrix_col <- data.frame(stage_less = train_topbins_rank$stage_less,
                            value = value_col)
   result_matrix <- data.frame(aggregate(value ~ stage_less,data = matrix_col, FUN = mean))
@@ -174,7 +156,6 @@ result_matrix_mean$II = 1
 result_matrix_mean$III = 1
 result_matrix_mean$IV = 1
 
-
 for (i in 1:Nsites) {
   result_matrix_mean[i,2:6] <- group_mean(train_topbins_rank[,i])
 }
@@ -182,7 +163,7 @@ for (i in 1:Nsites) {
 ### rm stage II because just includes 2 samples 
 rownames(result_matrix_mean) <- result_matrix_mean$site
 result_matrix_mean2 <- result_matrix_mean[,c(2,3,5,6)]
-### only the up or down sort of (healthy,I,III,IV)
+### only the up or down trend of (healthy,I,III,IV)
 up_sort <- function(one_row){
   one_row =  as.numeric(one_row)
   return(all(diff(one_row) > 0))
@@ -206,20 +187,15 @@ result_matrix_mean3$gap2 = result_matrix_mean3[,4]-result_matrix_mean3[,1]
 result_matrix_mean3$gap3 = result_matrix_mean3[,4]-result_matrix_mean3[,2]
 
 ### sort by gap && choose top 200
-
 result_matrix_mean3 <- result_matrix_mean3[order(-result_matrix_mean3$gap),]
 result_matrix_mean3_cut <- result_matrix_mean3[1:as.numeric(200),]
 
 rank_sites <- rownames(result_matrix_mean3_cut)
 length(rank_sites) # 200
-
-
-
 ```
-### use the 200 fetures to make the model
+### use the 200 fetures to build the model
 ```{r}
 ### build the model based on features:rank_sites
-  
   train_topbins<-as.data.frame(training_zscore)[,rank_sites]
   dim(train_topbins) #  158 300
   test_topbins<-as.data.frame(testing_zscore)[,rank_sites]
@@ -251,42 +227,35 @@ length(rank_sites) # 200
   rf_default1 <- modeltss_CA
   CAnonCAp=tss_z_pCAcut #19650
 
-   modeltss_CA = modeltss_CA200  # 
-   training_zscore = CAtrain
-  testing_zscore = CAtest 
   train_topbins<-as.data.frame(training_zscore)[,rank_sites]
   dim(train_topbins) #  158 300
   test_topbins<-as.data.frame(testing_zscore)[,rank_sites]
   dim(test_topbins) # 52 300
   
-  # 
+  ### prediction for the 30% validation data
   CAnontesting_zscore <- test_topbins 
   test_topbins <- CAnontesting_zscore 
-  pred <- predict(modeltss_CA200,newdata = test_topbins,type = "prob")
+  pred <- predict(rf_default1,newdata = test_topbins,type = "prob")
   pred$sample = rownames(pred)
   pred <- left_join(pred,model_clinic,by='sample')
   pred$res = 1
   pred[which(pred$CA<0.4),'res'] = 0 
   
   pred$true = 1
-  #pred$true[1:25] = 0
   pred[which(pred$group != 'CA'),'true'] = 0 
   
   pred$equ = 1
   pred[which(pred$res != pred$true),'equ'] = 0 
-  
   roc_data <- roc(pred$true, pred[,1],type="prob")
   print(roc_data)
-  
   pred <- left_join(pred,lung_clinic_used,'sample')
   
 ```
-
+### save data of CA model
 ```{r}
 ### save data of CA model
 CAnonCAp=tss_z_pCAcut #19650
-
-modeltss_CA200 = modeltss_CA # 
+modeltss_CA200 = modeltss_CA 
 CAtrain = training_zscore
 CAtest = testing_zscore
 load('/Users/pingyi/Desktop/BDF/script/out_data/CAnonCA200f')
@@ -296,7 +265,4 @@ save(training_range_site,testing,CAnonCAp,result_matrix_mean4, modeltss_CA200,CA
 
 ```
 
-```{r}
-
-```
 
