@@ -7,54 +7,6 @@ library(pROC)
 library(stats)
 library(caret)
 
-### columns of this input matrix are the samples with rows be the features
-pre_treat_rm0pNA <- function(matrix){
-  #### change -1 into 0 
-  matrix[matrix == -1] = 0
-  #### remove all 0s
-  print('columns of this input matrix are the samples with rows be the features')
-  print(c('The structure of the raw matrix is:',dim(matrix)))
-  tss_table_raw <- data.frame(t(matrix))
-  tssMatrix_rowSum<-rowSums(tss_table_raw,na.rm=T)
-  tssMatrix_colSum<- colSums(tss_table_raw,na.rm=T)
-  tssMatrix_rm0<-tss_table_raw[tssMatrix_rowSum!=0,]
-  tssMatrix_rm0<-tssMatrix_rm0[,tssMatrix_colSum!=0]
-  
-  print(c('The structure of the matrix after remove all NA & all zero is:',dim(tssMatrix_rm0) ))
-  #### remove rows or columns with many NA and 0s 
-  zero_matrix<-tssMatrix_rm0==0
-  zero_colSum<-colSums(zero_matrix,na.rm=T)
-  zero_rowSum<-rowSums(zero_matrix,na.rm=T)
-  na_matrix<-is.na(tssMatrix_rm0)
-  tss_naSum<-rowSums(na_matrix)
-  bin_naSum<-colSums(na_matrix)
-  
-  tss_sampleNum<-dim(tssMatrix_rm0)[2]
-  tss_binNum<-dim(tssMatrix_rm0)[1]
-  #tssMatrix_rmNA<-t(tssMatrix_rm0[(tss_naSum+zero_rowSum)<(tss_sampleNum/2),])#
-  tssMatrix_rmNA<-data.frame(tssMatrix_rm0[,(bin_naSum+zero_colSum)<(tss_binNum/2)])#
-  
-  print(c('The structure of the matrix after remove many NA & all zero is:',dim(tssMatrix_rmNA) ))
-  print(c('The range of the matrix after remove many NA & all zero is:',range(tssMatrix_rmNA) ))
-  
-  return(tssMatrix_rmNA)
-}
-
-nearZeroVar_for_matrix<- function(tssMatrix_rmNA){
-  
-  nzv <- nearZeroVar(tssMatrix_rmNA, freqCut=80/20, uniqueCut=30)
-  if(length(nzv)!=0)
-  {
-    tssMatrix_rmLowVar <- tssMatrix_rmNA[, -nzv]
-  } else {
-    tssMatrix_rmLowVar <- tssMatrix_rmNA
-  }
-  print(dim(tssMatrix_rmLowVar)) #263 90819
-  
-  matrix <-  data.frame(tssMatrix_rmNA)
-  return(matrix)
-}
-
 ### tssMatrix_rmNA2 should be the result of function 'pre_treat_rm0pNA' 
 ### && model_clinic$platform includes the inform of group to be coloured in the plot
 ### path be the output dir '/Users/pingyi/Desktop/XJ/XJ_paper/output/figures/batch/tss_raw_all/'
@@ -184,6 +136,63 @@ FD_cal <- function(trainTransformed,trainLabels,trainLabels_sig,paired = FALSE){
   print(c('The range of the fold-change is: ',range(tout_withID[,1]))) # 3.443190e-24 9.999481e-01
   return(tout_sort)
 }
+
+
+
+
+
+
+
+### columns of this input matrix are the samples with rows be the features
+pre_treat_rm0pNA <- function(matrix){
+  #### change -1 into 0 
+  matrix[matrix == -1] = 0
+  #### remove all 0s
+  print('columns of this input matrix are the samples with rows be the features')
+  print(c('The structure of the raw matrix is:',dim(matrix)))
+  tss_table_raw <- data.frame(t(matrix))
+  tssMatrix_rowSum<-rowSums(tss_table_raw,na.rm=T)
+  tssMatrix_colSum<- colSums(tss_table_raw,na.rm=T)
+  tssMatrix_rm0<-tss_table_raw[tssMatrix_rowSum!=0,]
+  tssMatrix_rm0<-tssMatrix_rm0[,tssMatrix_colSum!=0]
+  
+  print(c('The structure of the matrix after remove all NA & all zero is:',dim(tssMatrix_rm0) ))
+  #### remove rows or columns with many NA and 0s 
+  zero_matrix<-tssMatrix_rm0==0
+  zero_colSum<-colSums(zero_matrix,na.rm=T)
+  zero_rowSum<-rowSums(zero_matrix,na.rm=T)
+  na_matrix<-is.na(tssMatrix_rm0)
+  tss_naSum<-rowSums(na_matrix)
+  bin_naSum<-colSums(na_matrix)
+  
+  tss_sampleNum<-dim(tssMatrix_rm0)[2]
+  tss_binNum<-dim(tssMatrix_rm0)[1]
+  #tssMatrix_rmNA<-t(tssMatrix_rm0[(tss_naSum+zero_rowSum)<(tss_sampleNum/2),])#
+  tssMatrix_rmNA<-data.frame(tssMatrix_rm0[,(bin_naSum+zero_colSum)<(tss_binNum/2)])#
+  
+  print(c('The structure of the matrix after remove many NA & all zero is:',dim(tssMatrix_rmNA) ))
+  print(c('The range of the matrix after remove many NA & all zero is:',range(tssMatrix_rmNA) ))
+  
+  return(tssMatrix_rmNA)
+}
+
+nearZeroVar_for_matrix<- function(tssMatrix_rmNA){
+  
+  nzv <- nearZeroVar(tssMatrix_rmNA, freqCut=80/20, uniqueCut=30)
+  if(length(nzv)!=0)
+  {
+    tssMatrix_rmLowVar <- tssMatrix_rmNA[, -nzv]
+  } else {
+    tssMatrix_rmLowVar <- tssMatrix_rmNA
+  }
+  print(dim(tssMatrix_rmLowVar)) #263 90819
+  
+  matrix <-  data.frame(tssMatrix_rmNA)
+  return(matrix)
+}
+
+
+                            
 
 
 
