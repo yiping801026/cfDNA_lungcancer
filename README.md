@@ -1,1 +1,1 @@
-![image](https://github.com/yiping801026/cfDNA_lungcancer/assets/62942998/9ee1bc9a-aae0-40c3-9469-40e186fd262d)
+[Flowchart.pdf](https://github.com/yiping801026/cfDNA_lungcancer/files/14519661/Flowchart.pdf)
