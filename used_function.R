@@ -191,7 +191,18 @@ nearZeroVar_for_matrix<- function(tssMatrix_rmNA){
   return(matrix)
 }
 
-
+roc_mean_calculate_matrix <- function(matrix){
+  #matrix = tss_CAnon_trare
+  ### ROC result of the original models
+  matrix$obs_num <- rep(1,nrow(matrix))
+  matrix[matrix$obs == 'zero','obs_num'] = 0
+  matrix_result <- aggregate(matrix$var, by = list(matrix$rowIndex), FUN = mean)
+  matrix_resgroup <- unique(data.frame(rowIndex=matrix$rowIndex,obs_num=matrix$obs_num))
+  colnames(matrix_result)= c('rowIndex','nV')
+  matrix_result <- left_join(matrix_result,matrix_resgroup,by='rowIndex')
+  roc_data <- roc(matrix_result$obs_num, matrix_result$nV,type="prob")
+  return(matrix_result)
+}
                             
 
 
