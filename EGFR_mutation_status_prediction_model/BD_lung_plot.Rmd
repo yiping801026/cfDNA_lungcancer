@@ -1,0 +1,833 @@
+---
+title: "plot"
+author: "Yi_Ping"
+date: "2024-01-12"
+output: html_document
+---
+### plot for tss data
+```{r}
+### import the library 
+library(readxl)
+library(dplyr)
+library(factoextra) 
+library(ggplot2)
+library(pROC)
+library(stats)
+library(caret)
+library(pheatmap)
+library(clusterProfiler)
+library(ggstatsplot)
+### import the function
+source('./used_function.R')
+```
+
+### import dataset
+```{r}
+### tss matrix
+BJYYBIElung_tssmatrix <- read.csv("~/Desktop/BDF/data/BJYYBIElung_tssmatrix.csv")
+dim(BJYYBIElung_tssmatrix) # 93701   224
+### change '.' into '-'
+colnames(BJYYBIElung_tssmatrix)[3:ncol(BJYYBIElung_tssmatrix)] <- 
+gsub('[.]','-',colnames(BJYYBIElung_tssmatrix)[3:ncol(BJYYBIElung_tssmatrix)])
+### clinic data
+lung_clinic <- read_excel("~/Desktop/BDF/data/lung_clinic_used.xlsx")
+dim(lung_clinic) # 96  8
+
+unique(colnames(BJYYBIElung_tssmatrix))
+colnames(BJYYBIElung_tssmatrix)# 1:2, 3:124 ,125:224
+```
+### after row #97 cannot be used
+```{r}
+lung_clinic_used <- lung_clinic[1:96,]
+lung_clinic_used$Nmeta <- as.numeric(lung_clinic_used$Nmeta)
+table(lung_clinic_used$Nmeta)
+#0  1  2  3  4  5  7 
+#57 21  8  4  2  3  1 
+#lung_clinic_used$Nnodes <- apply(data.frame(lung_clinic_used$淋巴结),1,
+#                                 function(x)return(strsplit(x,'')[[1]][2]))
+#lung_clinic_used[which(lung_clinic_used$淋巴结 == '0'),'Nnodes'] = '0'
+table(lung_clinic_used$Nnodes)
+
+# 0  1  2  3 
+#45  2 18 31 
+table(lung_clinic_used$stage_less)
+# I II III IV
+# 32 3 22 39
+table(lung_clinic_used$GGOorsolid)
+
+```
+
+### plot ROC curve for  
+### model_AUC
+```{r}
+### test stage I 
+pred_all <- left_join(pred,lung_clinic_used,by='sample')
+#pred_all_stageI <- pred_all[which(pred_all$stage_less == 'I'),]
+
+tss_CAnon_trare <- data.frame(rf_default1$pred)
+tss_CAnon_trare <- tss_CAnon_trare[which(tss_CAnon_trare$mtry == 5),]
+
+roc_mean_calculate_matrix <- function(matrix){
+  #matrix = tss_CAnon_trare
+  ### ROC result of the original models
+  matrix$obs_num <- rep(1,nrow(matrix))
+  
+  matrix[matrix$obs == 'zero','obs_num'] = 0
+  matrix_result <- aggregate(matrix$EGFR, by = list(matrix$rowIndex), FUN = mean)
+  matrix_resgroup <- unique(data.frame(rowIndex=matrix$rowIndex,obs_num=matrix$obs_num))
+  colnames(matrix_result)= c('rowIndex','EGFR')
+  matrix_result <- left_join(matrix_result,matrix_resgroup,by='rowIndex')
+  roc_data <- roc(matrix_result$obs_num, matrix_result$EGFR,type="prob")
+  return(matrix_result)
+}
+
+### roc for models
+tss_rocplot <- roc_mean_calculate_matrix(tss_CAnon_trare)
+
+### add sample names
+rownames(tss_rocplot) <- rownames(train_topbins)
+tss_rocplot$sample <- rownames(tss_rocplot)
+tss_rocplot <- left_join(tss_rocplot,lung_clinic_used,by = 'sample')
+tss_rocplot
+
+roc_data_train <- roc(tss_rocplot$obs_num, tss_rocplot$EGFR,type="prob",ci = T)
+roc_data <- roc(pred$true, pred[,1],type="prob",ci = T)
+print(roc_data_train) # 1 sensitivity: 21/25  0.84
+
+roc.list_train <- list(roc_data_train,roc_data)# ,roc_data_trainII
+
+
+g.list <- ggroc(roc.list_train,size = 1,legacy.axes = TRUE) ### change the line size
+
+
+p <- g.list + scale_colour_manual(
+  #values = c("#ADDB88", "#8481BA",'#369F2D'), ### change line colors "#9ac9db",
+  values =c("#8481BA", "#ADDB88"),labels = c('Training Cohort (0.966 (0.941-0.991))','Validation Cohort (0.925 (0.860-0.991))'))+
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Cohorts (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+```
+```{r}
+### roc for models
+tss_rocplot <- roc_mean_calculate_matrix(tss_CAnon_trare)
+
+### add sample names
+rownames(tss_rocplot) <- rownames(train_topbins)
+tss_rocplot$sample <- rownames(tss_rocplot)
+tss_rocplot <- left_join(tss_rocplot,lung_clinic_used,by = 'sample')
+tss_rocplot
+
+roc_data_train <- roc(tss_rocplot$obs_num, tss_rocplot$CA,type="prob",ci = T)
+roc_data <- roc(pred$true, pred[,1],type="prob",ci = T)
+print(roc_data_train) # 1 sensitivity: 21/25  0.84
+
+roc.list_train <- list(roc_data_train,roc_data)# ,roc_data_trainII
+
+
+g.list <- ggroc(roc.list_train,size = 1,legacy.axes = TRUE) ### change the line size
+
+
+p <- g.list + scale_colour_manual(
+  #values = c("#ADDB88", "#8481BA",'#369F2D'), ### change line colors "#9ac9db",
+  values =c("#2878b5", "#f8ac8c"),labels = c('Training Cohort (0.987)','Validation Cohort (0.763)'))+
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Cohorts (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+```
+
+
+```{r}
+### roc for models
+tss_rocplot <- roc_mean_calculate_matrix(tss_CAnon_trare)
+
+### add sample names
+rownames(tss_rocplot) <- rownames(train_topbins)
+tss_rocplot$sample <- rownames(tss_rocplot)
+tss_rocplot <- left_join(tss_rocplot,lung_clinic_used,by = 'sample')
+tss_rocplot
+
+roc_data_train <- roc(tss_rocplot$obs_num, tss_rocplot$CA,type="prob",ci = T)
+roc_data <- roc(pred$true, pred[,1],type="prob",ci = T)
+print(roc_data_train) # 1 sensitivity: 21/25  0.84
+
+roc.list_train <- list(roc_data_train,roc_data,roc_data_inde)# ,roc_data_trainII
+
+
+g.list <- ggroc(roc.list_train,size = 1,legacy.axes = TRUE) ### change the line size
+
+
+p <- g.list + scale_colour_manual(
+  #values = c("#ADDB88", "#8481BA",'#369F2D'), ### change line colors "#9ac9db",
+  values =c('#c82423',"#2878b5", "#f8ac8c"),#,"#9ac9db"
+                             labels = c('Training Cohort (0.968 (0.943-0.992))','Validation Cohort (0.936 (0.877-0.996))','Independent Validation 0.886 (0.831-0.940)'))+ ### change legend names,'stage II (1)'
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Cohorts (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+tss_rocplot
+roc_data <- roc(pred$true, pred[,1],type="prob",ci = T)
+roc_data_train <- roc(tss_rocplot$true, tss_rocplot$CA,type="prob",ci = T)
+print(roc_data_train) # 1 sensitivity: 21/25  0.84
+
+roc.list_train <- list(roc_data_train,roc_data)# ,roc_data_trainII
+
+
+g.list <- ggroc(roc.list_train,size = 1,legacy.axes = TRUE) ### change the line size
+p <- g.list + scale_colour_manual(values = c("#FC8002", "#4995C6"), ### change line colors "#9ac9db",
+                             labels = c('Training Cohort (0.956)','Validation Cohort (0.888)'))+ ### change legend names,'stage II (1)'
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Cohorts (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+ciobj <- ci.se(roc.list_train, # CI of sensitivity
+               
+               specificities=seq(0, 100, 5)) # over a select set of specificities
+
+plot(ciobj, type="shape", col="#1c61b6AA") # plot as a blue shape
+
+p + ggtitle("Screening Model") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+```
+
+
+### for several stages
+```{r}
+### for trianing data -- mean of 3 repeats
+roc_mean_calculate <- function(matrix){
+  ### ROC result of the original models
+  matrix$obs_num <- rep(1,nrow(matrix))
+  matrix[matrix$obs == 'nonCA','obs_num'] = 0
+  matrix_result <- aggregate(matrix$CA, by = list(matrix$rowIndex), FUN = mean)
+  matrix_resgroup <- unique(data.frame(rowIndex=matrix$rowIndex,obs_num=matrix$obs_num))
+  colnames(matrix_result)= c('rowIndex','CA')
+  matrix_result <- left_join(matrix_result,matrix_resgroup,by='rowIndex')
+  roc_data <- roc(matrix_result$obs_num, matrix_result$CA,type="prob")
+  return(roc_data)
+}
+### for training data -- mean of 3 repeats
+roc_mean_calculate_matrix <- function(matrix){
+  ### ROC result of the original models
+  matrix$obs_num <- rep(1,nrow(matrix))
+  matrix[matrix$obs == 'nonCA','obs_num'] = 0
+  matrix_result <- aggregate(matrix$CA, by = list(matrix$rowIndex), FUN = mean)
+  matrix_resgroup <- unique(data.frame(rowIndex=matrix$rowIndex,obs_num=matrix$obs_num))
+  colnames(matrix_result)= c('rowIndex','CA')
+  matrix_result <- left_join(matrix_result,matrix_resgroup,by='rowIndex')
+  roc_data <- roc(matrix_result$obs_num, matrix_result$CA,type="prob")
+  return(matrix_result)
+}
+
+```
+
+```{r}
+#pred_all_stageI <- pred_all[which(pred_all$stage_less == 'I'),]
+### train stage I 
+#tss_CAnon_trare <- data.frame(modeltss_CA200$pred)
+tss_CAnon_trare <- data.frame(modeltss_CA$pred)
+tss_CAnon_trare <- tss_CAnon_trare[which(tss_CAnon_trare$mtry == 1),]
+### roc for models
+tss_roc_result <- roc_mean_calculate(tss_CAnon_trare)
+tss_rocplot <- roc_mean_calculate_matrix(tss_CAnon_trare)
+
+### add sample names
+rownames(tss_rocplot) <- rownames(train_topbins)
+tss_rocplot$sample <- rownames(tss_rocplot)
+tss_rocplot <- left_join(tss_rocplot,lung_clinic_used,by = 'sample')
+tss_rocplot
+
+### calculate the satge I 
+tss_rocplot$res = 1
+tss_rocplot[which(tss_rocplot$CA<=0.42),'res'] = 0 
+  
+tss_rocplot$equ = 1
+tss_rocplot[which(tss_rocplot$res != tss_rocplot$obs_num),'equ'] = 0 
+colnames(tss_rocplot)[3] <-  'true'
+tss_rocplot[is.na(tss_rocplot$stage_less),'stage_less'] = 'NA'
+tss_rocplot_satgeI <- tss_rocplot[which(tss_rocplot$stage_less %in% c('NA','I')),]
+### add satge I together 
+pred_all[is.na(pred_all$stage_less),'stage_less'] = 'NA'
+pred_all_stageI <- pred_all[which(pred_all$stage_less%in% c('NA','I')),]
+
+colnames_to <- intersect(colnames(pred_all),colnames(tss_rocplot_satgeI))
+all_stageI <- rbind(tss_rocplot_satgeI[,colnames_to],pred_all_stageI[,colnames_to])
+
+
+roc_data <- roc(all_stageI$true, all_stageI$CA,type="prob")
+print(roc_data) # 0.9767 sensitivity:0.78125
+
+### training and test separate ROC
+tss_rocplot_satgeI <- tss_rocplot[which(tss_rocplot$stage_less %in% c('NA','I')),]
+roc_data_trainI <- roc(tss_rocplot_satgeI$true, tss_rocplot_satgeI$CA,type="prob")
+print(roc_data_trainI) # 1 sensitivity: 21/25  0.84
+pred_all_stageII <- tss_rocplot[which(tss_rocplot$stage_less%in% c('NA','II')),]
+roc_data_trainII <- roc(pred_all_stageII$true, pred_all_stageII$CA,type="prob")
+print(roc_data_trainII) # 1 sensitivity: 21/25  0.84
+pred_all_stageIII <- tss_rocplot[which(tss_rocplot$stage_less%in% c('NA','III')),]
+roc_data_trainIII <- roc(pred_all_stageIII$true, pred_all_stageIII$CA,type="prob")
+print(roc_data_trainIII) # 1 sensitivity: 21/25  0.84
+pred_all_stageIV <- tss_rocplot[which(tss_rocplot$stage_less%in% c('NA','IV')),]
+roc_data_trainIV <- roc(pred_all_stageIV$true, pred_all_stageIV$CA,type="prob")
+print(roc_data_trainIV) # 1 sensitivity: 21/25  0.84
+
+```
+### plot the roc of stages together
+```{r}
+roc.list_train <- list(roc_data_trainI,roc_data_trainII,roc_data_trainIII,roc_data_trainIV)# ,
+g.list <- ggroc(roc.list_train,size = 1,legacy.axes = TRUE) ### change the line size
+p <- g.list + scale_colour_manual(values = c("#2878b5", "#f8ac8c","#9ac9db",'#c82423'), ### change line colors ,
+                             labels = c('stage I (1)','stage II (1)','stage III  (0.932)','stage IV  (0.975)'))+ ### change legend names,
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Stages (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model Training") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+
+```
+```{r}
+### training and test separate ROC
+tss_rocplot_satgeI <- tss_rocplot[which(tss_rocplot$stage_less %in% c('NA','I','II')),]
+roc_data_trainI <- roc(tss_rocplot_satgeI$true, tss_rocplot_satgeI$CA,type="prob",ci = T)
+print(roc_data_trainI) # 1 sensitivity: 21/25  0.84
+
+pred_all_stageIII <- tss_rocplot[which(tss_rocplot$stage_less%in% c('NA','III','IV')),]
+roc_data_trainIII <- roc(pred_all_stageIII$true, pred_all_stageIII$CA,type="prob",ci = T)
+print(roc_data_trainIII) # 1 sensitivity: 21/25  0.84
+
+```
+```{r}
+roc.list_train <- list(roc_data_trainI,roc_data_trainIII)# ,
+g.list <- ggroc(roc.list_train,size = 1,legacy.axes = TRUE) ### change the line size
+p <- g.list + scale_colour_manual(values = c( "#f8ac8c","#2878b5"), ### change line colors ,
+                             labels = c('Early Satges (0.943 (0.901-0.985))','Advanced Satges (0.980 (0.960-0.999))'))+ ### change legend names,
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Stages (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model Training") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+
+```
+```{r}
+### training 95% 98% 
+roc_data_trainI <- roc(tss_rocplot_satgeI$true, tss_rocplot_satgeI$CA,type="prob")
+roc_data_trainIII <- roc(pred_all_stageIII$true, pred_all_stageIII$CA,type="prob")
+
+coords(roc = roc_data_trainIII, x = 0.9,input = "specificity")
+coords(roc = roc_data_trainI, x = 0.9,input = "specificity")
+
+```
+
+### test group
+```{r}
+### test stage I 
+pred_all <- pred
+pred_all[is.na(pred_all$stage_less),'stage_less'] = 'NA'
+### test separate ROC
+tss_rocplot_satgeI <- pred_all[which(pred_all$stage_less %in% c('NA','I')),]
+roc_data_trainI <- roc(tss_rocplot_satgeI$true, tss_rocplot_satgeI$CA,type="prob")
+print(roc_data_trainI) # 1 sensitivity: 21/25  0.84
+pred_all_stageII <- pred_all[which(pred_all$stage_less%in% c('NA','II')),]
+roc_data_trainII <- roc(pred_all_stageII$true, pred_all_stageII$CA,type="prob")
+print(roc_data_trainII) # 1 sensitivity: 21/25  0.84
+pred_all_stageIII <- pred_all[which(pred_all$stage_less%in% c('NA','III')),]
+roc_data_trainIII <- roc(pred_all_stageIII$true, pred_all_stageIII$CA,type="prob")
+print(roc_data_trainIII) # 1 sensitivity: 21/25  0.84
+pred_all_stageIV <- pred_all[which(pred_all$stage_less%in% c('NA','IV')),]
+roc_data_trainIV <- roc(pred_all_stageIV$true, pred_all_stageIV$CA,type="prob")
+print(roc_data_trainIV) # 1 sensitivity: 21/25  0.84
+```
+
+```{r}
+### test stage I 
+pred_all <- pred
+pred_all[is.na(pred_all$stage_less),'stage_less'] = 'NA'
+### test separate ROC
+tss_rocplot_satgeI <- pred_all[which(pred_all$stage_less %in% c('NA','I','II')),]
+roc_data_trainI <- roc(tss_rocplot_satgeI$true, tss_rocplot_satgeI$CA,type="prob",ci = T)
+print(roc_data_trainI) # 1 sensitivity: 21/25  0.84
+
+pred_all_stageIII <- pred_all[which(pred_all$stage_less%in% c('NA','III','IV')),]
+roc_data_trainIII <- roc(pred_all_stageIII$true, pred_all_stageIII$CA,type="prob",ci = T)
+print(roc_data_trainIII) # 1 sensitivity: 21/25  0.84
+
+```
+
+```{r}
+roc.list_test <- list(roc_data_trainI,roc_data_trainIII)# 
+roc.list_test
+g.list <- ggroc(roc.list_test,size = 1,legacy.axes = TRUE) ### change the line size
+p <- g.list + scale_colour_manual(values = c("#9ac9db","#2878b5"), ### change line colors",s
+                             labels = c('Early Satges (0.965 (0.913-1))','Advanced Satges (0.910 (0.821-0.993))'))+ ### change legend names
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Stages (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model Validation") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+
+```
+
+
+### valid 
+```{r}
+
+### test stage I 
+pred_all <- pred
+pred_all[is.na(pred_all$stage_less),'stage_less'] = 'NA'
+### test separate ROC
+tss_rocplot_satgeI <- pred_all[which(pred_all$stage_less %in% c('NA','I','II')),]
+roc_data_trainI <- roc(tss_rocplot_satgeI$true, tss_rocplot_satgeI$CA,type="prob",ci = T)
+print(roc_data_trainI) # 1 sensitivity: 21/25  0.84
+
+pred_all_stageIII <- pred_all[which(pred_all$stage_less%in% c('NA','III','IV')),]
+roc_data_trainIII <- roc(pred_all_stageIII$true, pred_all_stageIII$CA,type="prob",ci = T)
+print(roc_data_trainIII) # 1 sensitivity: 21/25  0.84
+
+
+
+
+```
+
+```{r}
+roc_data <- roc(pred$true, pred[,1],type="prob",ci = T)
+roc_data_inde <- roc_data
+roc.list_test <- list(roc_data)# 
+roc.list_test
+g.list <- ggroc(roc.list_test,size = 1,legacy.axes = TRUE) ### change the line size
+p <- g.list + scale_colour_manual(values = c('#369F2D'), ### change line colors",s
+                             labels = c('Independent Validation 0.891 (0.837-0.944)'))+ ### change legend names
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Cohort (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model Independent Validation") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+
+```
+
+```{r}
+roc.list_test <- list(roc_data_trainI,roc_data_trainIII)# 
+roc.list_test
+g.list <- ggroc(roc.list_test,size = 1,legacy.axes = TRUE) ### change the line size
+p <- g.list + scale_colour_manual(values = c("#9ac9db",  "#f8ac8c"), ### change line colors",s
+                             labels = c('stage I (0.938)','stage II  (0.967)','stage III  (0.893)','stage IV  (0.837)'))+ ### change legend names
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="darkgrey", linetype="dashed")+ ### add middle line
+  labs(title = 'Training Cohort',col = 'Stages (AUC)', x='False Positive Rate',y='True Positive Rate')+ ### change legend title(col) & x,ynames 
+  ggplot2::theme(
+    panel.grid.major = element_line(colour = NA),
+    panel.background = element_rect(fill = "transparent", colour = 'black'),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid.minor = element_blank()
+  ) 
+
+p + ggtitle("Screening Model Validation") +
+  ggplot2::theme_bw() +
+  #ggplot2::ylim(-ylimn,ylimn)+
+  #ggplot2::xlim(-xlimn,xlimn)+
+  coord_fixed(ratio = 1)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+####EGFR
+
+```{r}
+used_100f <- rbind(train_topbins, test_topbins)
+### PCA for CA vs nonCA
+samples <- data.frame(sample = rownames(used_100f))
+samples <- left_join(samples,lung_clinic_withvar[,c('sample','EGFR')],by = 'sample')
+library(pheatmap)
+heat_plot <- used_100f[,1:65]
+
+range(heat_plot)
+
+#heat_plot <- rbind(heat_plot,raw_plot_data[model_clinic[which(model_clinic$stage_less == '0'),'sample'],]) #(263)
+heat_plot <- rbind(used_100f[samples[which(samples$EGFR == 'zero'),'sample'],],
+                   used_100f[samples[which(samples$EGFR == 'EGFR'),'sample'],]) # 100,32s
+
+dim(heat_plot) # 196 101
+
+#annotation_row <- data.frame( group = c(rep('Healthy',79),rep('Cancer',94)))
+annotation_row <- data.frame(
+  group = c(rep('EGFR-',36),rep('EGFR+',29)))
+row.names(annotation_row) <- rownames(heat_plot)
+annotation_row$sample = rownames(heat_plot)
+
+annotation_row <- left_join(annotation_row,samples,'sample')
+colnames(annotation_row)
+annotation_row <- data.frame(group = (annotation_row[,c("group")]))
+row.names(annotation_row) <- rownames(heat_plot)
+colnames(annotation_row) <- c('group')
+
+ann_colors = list(
+  
+  group = c(`EGFR-`="#ADDB88" ,`EGFR+` = '#B4B4D5'))
+ 
+
+p1 <- pheatmap(heat_plot[,1:65],
+               #legend_breaks = 0:,
+               cluster_rows = F,
+               cluster_cols = T,
+               #scale = 'column',
+               #scale = 'row',
+               scale = 'none',
+               annotation_row = annotation_row,
+               annotation_colors = ann_colors,
+               show_colnames = F,
+               show_rownames = F,
+               cell_width = 0.1 ,
+               cell_height = 0.01,
+               breaks = -4:5,
+               color = colorRampPalette(c("darkblue", "white", "tomato2"))(8),
+               
+               #color = colorRampPalette(c("darkblue", "wheat3", "tomato2"))(8),
+               #color = colorRampPalette(c("darkblue", "white", "red4"))(100),
+               #annotation_col=annotation_col
+               
+               #gaps_col=col_gap,
+               gaps_row = c(36),
+               border_color = 'white'
+               #border = TRUE
+)
+
+p1
+
+```
+
+
+
+
+
+
+
+
+
+
+###
+```{r}
+load('/Users/pingyi/Desktop/BDF/script/out_data/CAnonCA100f')
+load(file = '/Users/pingyi/Desktop/BDF/script/out_data/CAnonCA200f')
+used_100f
+### PCA for CA vs nonCA
+samples <- data.frame(sample = rownames(used_100f))
+samples <- left_join(samples,lung_clinic_used,by = 'sample')
+samples[is.na(samples$stage_less) ,'stage_less']  = 'NA'
+samples$earlylate <- 'control'
+samples[which(samples$stage_less %in% c('I','II')) ,'earlylate']  = 'early'
+samples[which(samples$stage_less %in% c('III','IV')) ,'earlylate']  = 'late'
+
+samples[which(samples$stage_less == 'NA'),'stage_less'] = 'control'
+
+PCA_plot_10PCs(
+  path = '/Users/pingyi/Desktop/BDF/script/output/PCA_CA2/',
+  platform = used_100f[,'group'],
+  tssMatrix_rmNA2 = data.frame(t(used_100f[,-ncol(used_100f)])),
+  xlimn = 10,
+  ylimn = 10)
+  
+
+PCA_plot_10PCs(
+  path = '/Users/pingyi/Desktop/BDF/script/output/PCA_CA_stage2/',
+  platform = samples$earlylate,
+  tssMatrix_rmNA2 = data.frame(t(used_100f[,-ncol(used_100f)])),
+  xlimn = 10,
+  ylimn = 10)
+```
+
+### heatmap
+```{r}
+library(pheatmap)
+samples <- left_join(lung_clinic,lung_clinic_withvar[,c('sample','EGFR')],'sample')
+samples[is.na(samples$EGFR),'EGFR'] = 'NA'
+samples[97:196,'sample'] = rownames(used_100f[97:196,])
+samples[97:196,'stage_less'] = 'control'
+#heat_plot <- used_100f[,1:200]
+#used_100f <- heat_plot
+#lung_clinic_withvar <- read.csv("~/Desktop/BDF/script/out_data/lung_clinic_withvar.csv", row.names=1)
+#samples <- lung_clinic_withvar
+#range(heat_plot)
+
+#heat_plot <- rbind(heat_plot,raw_plot_data[model_clinic[which(model_clinic$stage_less == '0'),'sample'],]) #(263)
+samples <- data.frame(samples)
+used_100f <- data.frame(used_100f)
+heat_plot <- rbind(used_100f[samples[which(samples$stage_less == 'control'),'sample'],],
+                   used_100f[samples[which(samples$stage_less == 'I'),'sample'],]) # 100,32s
+heat_plot <- rbind(heat_plot,used_100f[samples[which(samples$stage_less == 'II'),'sample'],]) #3
+heat_plot <- rbind(heat_plot,used_100f[samples[which(samples$stage_less == 'III'),'sample'],]) #22
+heat_plot <- rbind(heat_plot,used_100f[samples[which(samples$stage_less == 'IV'),'sample'],]) #39
+
+dim(heat_plot) # 196 101
+
+#annotation_row <- data.frame( group = c(rep('Healthy',79),rep('Cancer',94)))
+annotation_row <- data.frame(
+  group = c(rep('Healthy',100), rep('Stage I',32),rep('Stage II',3), rep('Stage III',22),rep('Stage IV',39)))
+row.names(annotation_row) <- rownames(heat_plot)
+annotation_row$sample = rownames(heat_plot)
+
+annotation_row <- left_join(annotation_row,samples,'sample')
+colnames(annotation_row)
+annotation_row <- annotation_row[,c("group",'histological.subtype', 'EGFR')]
+row.names(annotation_row) <- rownames(heat_plot)
+annotation_row[1:100,] <- 'Healthy'
+#annotation_row[is.na(annotation_row)] = 'NA'
+colnames(annotation_row) <- c("Stage",'Histological Subtype','EGFR')
+rownames(annotation_row) = rownames(heat_plot)
+ann_colors = list(
+  Stage = c(`Healthy`="#CEDFEF" ,`Stage I` = "salmon" ,`Stage II`='brown3',`Stage III` ="navy",`Stage IV` ="black"),
+  `Histological Subtype`=c(`Healthy`="#CEDFEF" ,`LUAD` = "#FC8002" ,`NA`='salmon',`LUSC` ="#ADDB88",`SCLC` ="#369F2D",`LCNEC` = 'navy'),
+  EGFR = c(`Healthy`="#CEDFEF" ,`zero` = "#ADDB88" ,`EGFR`='#B4B4D5',`NA` ="#8481BA")
+  #,
+  #Nmetastases =  c(`Healthy`="#CEDFEF" ,`0` = "#ADDB88" ,`1`="#369F2D",`2` ="#FAC7B3",`3` ="#EE4431",`4` = 'green',`5` = '#92C2DD',`7` = '#B9181A'),
+  #Nnodes =  c(`Healthy`="#CEDFEF" ,`0` = "#ADDB88" ,`1`='#FAC7B3',`2` ="#92C2DD",`3` ="#4995C6"),
+  #Variant =  c(`Healthy`="#CEDFEF" ,`0` = "#ADDB88" ,`1`='#B4B4D5',`NA` ="#8481BA")
+)
+ 
+
+p1 <- pheatmap(heat_plot[,1:200],
+               #legend_breaks = 0:,
+               cluster_rows = F,
+               cluster_cols = T,
+               #scale = 'column',
+               #scale = 'row',
+               scale = 'none',
+               annotation_row = annotation_row,
+               annotation_colors = ann_colors,
+               show_colnames = F,
+               show_rownames = F,
+               cell_width = 0.1 ,
+               cell_height = 0.01,
+               breaks = -4:5,
+               color = colorRampPalette(c("darkblue", "white", "tomato2"))(8),
+               
+               #color = colorRampPalette(c("darkblue", "wheat3", "tomato2"))(8),
+               #color = colorRampPalette(c("darkblue", "white", "red4"))(100),
+               #annotation_col=annotation_col
+               
+               #gaps_col=col_gap,
+               #gaps_row = c(188, 281),
+               border_color = 'black'
+               #border = TRUE
+)
+
+p1
+
+
+```
+
+### GO/GSEA
+```{r}
+### the genes:
+colnames(used_100f)
+bridge_matrix <- BJYYBIElung_tssmatrix[,1:2]
+bridge_matrix$sites <- rownames(bridge_matrix)
+
+
+CA_100f <- data.frame(f_names = colnames(used_100f))
+CA_100f$sites <- apply(data.frame(CA_100f$f_names), 1, function(x)return(strsplit(x,'X')[[1]][2]))
+
+CA_100f <- left_join(CA_100f,bridge_matrix,by = 'sites')
+CA_100f_gene <- unique(CA_100f$gene[1:100])
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+gene_list <- CA_100f_gene
+# 进行GO富集分析
+go_result <- enrichGO(gene          = gene_list,
+                      OrgDb         = org.Hs.eg.db, 
+                      keyType       = "SYMBOL",       
+                      ont           = "MF",           
+                      pAdjustMethod = "BH",          
+                      pvalueCutoff = 0.05)  
+#CAnon249_MF <- go_result
+CAnontss_MF <- data.frame(go_result@result)
+
+#### order by the p-adjust
+CAnontss_MF_top <- CAnontss_MF[order(CAnontss_MF$p.adjust),]
+CAnontss_MF_top <- CAnontss_MF_top[1:20,]
+CAnontss_MF_top$Generatio<- apply(data.frame(CAnontss_MF_top$GeneRatio),1,function(x)return(as.numeric(strsplit(x,'/')[[1]][1])/as.numeric(strsplit(x,'/')[[1]][2])))
+CAnontss_MF_top <- CAnontss_MF_top[order(-CAnontss_MF_top$Generatio),]
+CAnontss_MF_top$Description
+
+kegg_point=ggplot(CAnontss_MF_top,aes(x=Description,y=Generatio))+
+  geom_point(aes(color=-log10(pvalue),size=Count),alpha=0.8)+
+  scale_x_discrete(labels=function(x)stringr::str_wrap(x,width = 25))+
+  coord_flip()+scale_size_continuous(range = c(3, 6)) +
+  scale_color_gradient(low = "red",high = "purple")
+kegg_point + ggplot2::theme(axis.text = element_text( color = "black", size = 10),
+                            #text = element_text(y='',size = 10),  # 调整文字大小
+                            plot.title = element_text(size = 5),  # 调整标题文字大小
+                            plot.margin = unit(c(0.1,0.1, 0.1, 0.1), "cm"))+coord_flip()
+
+
+```
+
+
+### boxplot
+```{r}
+
+```
+
+###vol-plot
+
+```{r}
+
+```
+
+### corr?
+```{r}
+
+```
+
+### boxplot
+```{r}
+
+colnames(z_score_matix)[1:300] <- 1:300
+for (i in 1:300) {
+  #i = 1
+  boxplot()
+  p <- ggbetweenstats(
+  data = z_score_matix[,c(i,301)],
+  x = data[,2],
+  y = data[,1],
+  pairwise.display = 'all')
+
+  pdf(file=paste0('/Users/pingyi/Desktop/BDF/script/output/boxplot/',i,'.pdf'),bg = "white")
+  print(p)
+  dev.off()
+}
+
+p + ggplot2::scale_y_continuous(limits = c(-0.1, 0.05))+
+  coord_fixed(ratio = 30)+ 
+  ggplot2::theme(axis.text = element_text( color = "black", size = 10),
+                 text = element_text(size = 15),  # 调整文字大小
+                 plot.title = element_text(size = 10),  # 调整标题文字大小
+                 plot.margin = unit(c(0.2, 0.2, 0.2, 0.2), "cm")) 
+
+colnames(z_score_matix)
+
+```
+
+```{r}
+plot_m <- data.frame( data= z_score_matix[,1],group = samples$earlylate)
+p <- ggplot(data=plot_m,aes(x=group,y=data,color=group))+
+  stat_boxplot(geom ='errorbar', width = 0.3)+
+  geom_boxplot(alpha=0.2,width=0.45,
+               position=position_dodge(width=0.8),
+               size=0.75,outlier.shape = NA,outlier.colour = NA)
+
+
+pdf(file=paste0(path,,'.pdf'),bg = "white")
+print(p)
+dev.off()
+
+
+for (i in 1:300){
+  plot_m <- data.frame( data= z_score_matix[,i],group = samples$earlylate)
+  p <- ggplot(data=plot_m,aes(x=group,y=data,color=group))+
+  stat_boxplot(geom ='errorbar', width = 0.3)+
+  geom_boxplot(alpha=0.2,width=0.45,
+               position=position_dodge(width=0.8),
+               size=0.75,outlier.shape = NA,outlier.colour = NA)
+  
+  pdf(file=paste0('/Users/pingyi/Desktop/BDF/script/output/boxplot/',i,'.pdf'),bg = "white")
+  print(p)
+  dev.off()
+
+}
+
+```
+
+
+
+
