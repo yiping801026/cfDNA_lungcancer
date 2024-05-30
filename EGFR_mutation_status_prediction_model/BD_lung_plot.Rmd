@@ -279,7 +279,7 @@ tss_rocplot
 
 ### calculate the satge I 
 tss_rocplot$res = 1
-tss_rocplot[which(tss_rocplot$CA<=0.42),'res'] = 0 
+tss_rocplot[which(tss_rocplot$CA<=cutoff),'res'] = 0 
   
 tss_rocplot$equ = 1
 tss_rocplot[which(tss_rocplot$res != tss_rocplot$obs_num),'equ'] = 0 
