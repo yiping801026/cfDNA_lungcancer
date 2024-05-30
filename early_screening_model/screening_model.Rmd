@@ -239,7 +239,7 @@ length(rank_sites) # 200
   pred$sample = rownames(pred)
   pred <- left_join(pred,model_clinic,by='sample')
   pred$res = 1
-  pred[which(pred$CA<0.4),'res'] = 0 
+  pred[which(pred$CA<cutoff),'res'] = 0 
   
   pred$true = 1
   pred[which(pred$group != 'CA'),'true'] = 0 
