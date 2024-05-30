@@ -52,7 +52,7 @@ pred <- predict(modeltss_CA200,newdata = vali_topbins,type = "prob")
 ### make the prediction table
 pred$sample = rownames(pred)
 pred$res = 1
-pred[which(pred$CA<0.4),'res'] = 0 
+pred[which(pred$CA<cutoff),'res'] = 0 
 
 pred$true = 1
 pred$true[78:151] = 0
