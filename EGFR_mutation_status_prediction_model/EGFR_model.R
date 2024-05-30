@@ -149,7 +149,7 @@ pred$sample = rownames(pred)
 lung_clinic_withvar$group = lung_clinic_withvar$EGFR
 pred <- left_join(pred,lung_clinic_withvar[,c('sample','group')],by='sample')
 pred$res = 1
-pred[which(pred$EGFR<0.5),'res'] = 0 
+pred[which(pred$EGFR<cutoff),'res'] = 0 
 
 pred$true = 1
 #pred$true[1:25] = 0
